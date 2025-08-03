@@ -1,17 +1,32 @@
 pipeline {
   agent any
+
   environment {
-    DOCKERHUB   = 'satya66655'
-    EKS_CLUSTER = 'andrew-cluster'
-    AWS_REGION  = 'us-east-1'
+    // Git
+    GIT_REPO_URL        = 'https://github.com/satya66655/my-k8s-app.git'
+    GIT_CREDENTIALS_ID  = 'git-credentials'
+
+    // Docker
+    DOCKERHUB           = 'satya66655'
+    DOCKER_CREDENTIALS_ID = 'dockerhub-creds'
+
+    // AWS / EKS
+    AWS_REGION          = 'us-east-1'
+    AWS_CREDENTIALS_ID  = 'aws-creds'
+    EKS_CLUSTER         = 'andrew-cluster'
+    
+    // Kubernetes namespace (optional)
+    KUBE_NAMESPACE      = 'default'
   }
+
   stages {
     stage('Checkout') {
       steps {
-        git url: 'https://github.com/your-org/your-app.git',
-            credentialsId: 'git-credentials'
+        git url: "${GIT_REPO_URL}",
+            credentialsId: "${GIT_CREDENTIALS_ID}"
       }
     }
+
     stage('Build Docker Image') {
       steps {
         script {
@@ -20,10 +35,11 @@ pipeline {
         }
       }
     }
+
     stage('Push to Docker Hub') {
       steps {
         withCredentials([usernamePassword(
-            credentialsId: 'dockerhub-creds',
+            credentialsId: "${DOCKER_CREDENTIALS_ID}",
             usernameVariable: 'DOCKER_USER',
             passwordVariable: 'DOCKER_PASS')]) {
           sh 'echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin'
@@ -31,19 +47,27 @@ pipeline {
         }
       }
     }
+
     stage('Deploy to EKS') {
       steps {
-        withCredentials([[$class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'aws-creds']]) {
+        withCredentials([[
+            $class: 'AmazonWebServicesCredentialsBinding',
+            credentialsId: "${AWS_CREDENTIALS_ID}"
+        ]]) {
           sh """
-            aws eks update-kubeconfig --name ${EKS_CLUSTER} --region ${AWS_REGION}
+            aws eks update-kubeconfig \
+              --name ${EKS_CLUSTER} \
+              --region ${AWS_REGION}
+
             kubectl set image deployment/your-app \
-              your-app=${DOCKERHUB}/your-app:${BUILD_NUMBER} -n default
+              your-app=${DOCKERHUB}/your-app:${BUILD_NUMBER} \
+              -n ${KUBE_NAMESPACE}
           """
         }
       }
     }
   }
+
   post {
     success { echo 'Deployment succeeded!' }
     failure { echo 'Pipeline failed.' }
